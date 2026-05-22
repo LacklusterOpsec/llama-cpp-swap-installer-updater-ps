@@ -826,13 +826,11 @@ function New-LlamaSwapConfig ([string]$ModelDir, [bool]$Force = $false) {
 
     $configPath = Join-Path $LlamaSwapDir 'config.yaml'
 
-    if (-not $Force -and (Test-Path $configPath)) {
+    if (Test-Path $configPath) {
         Write-Host ''
         Write-Info "config.yaml already exists: $configPath"
-        if (-not (Read-Confirm 'Overwrite it?')) {
-            Write-Info 'Keeping existing config.yaml.'
-            return $null
-        }
+        Write-Info 'Keeping existing config.yaml.'
+        return $null
     }
 
     # Server address / port
@@ -1212,8 +1210,12 @@ function Invoke-Scan {
 
     # Write output files
     $configPath = Join-Path $LlamaSwapDir 'config.yaml'
-    Write-SwapConfig -Models $models -ConfigPath $configPath
-    Write-Ok 'config.yaml updated.'
+    if (-not (Test-Path $configPath)) {
+        Write-SwapConfig -Models $models -ConfigPath $configPath
+        Write-Ok 'config.yaml created.'
+    } else {
+        Write-Info 'config.yaml already exists. Not overwriting.'
+    }
 
     if ($models.Count -gt 0) {
         New-OpencodeConfig -BaseUrl $serverBaseUrl -Models $models
