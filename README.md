@@ -1,23 +1,23 @@
 # ⚡ llama.cpp + llama-swap Installer / Updater
 
-A PowerShell wizard that downloads, installs, and configures [llama.cpp](https://github.com/ggml-org/llama.cpp) and [llama-swap](https://github.com/mostlygeek/llama-swap) on Windows — and keeps them up to date with a single command.
+A native PowerShell WPF GUI application that downloads, installs, and configures [llama.cpp](https://github.com/ggml-org/llama.cpp) and [llama-swap](https://github.com/mostlygeek/llama-swap) on Windows — and keeps them up to date through an easy-to-use graphical dashboard.
 
 ---
 
 ## ✨ What it does
 
-**First run** — walks you through a full setup wizard:
+**Interactive run** — launches a native graphical dashboard (WPF) with no external dependencies that lets you:
 
-- 📦 Downloads the latest **llama.cpp** and **llama-swap** Windows binaries from GitHub Releases
-- 🔧 Lets you choose a llama.cpp build interactively (AVX2, AVX, Vulkan, CUDA, ...) — if an NVIDIA GPU is detected, the best matching CUDA build is pre-selected automatically
-- 🔍 Scans a folder of your choice for `.gguf` model files
-- 📝 Generates a `config.yaml` for llama-swap with a `llama-server` command for each model
-- 🔗 Generates an `opencode.json` so [opencode](https://opencode.ai) connects to llama-swap automatically
-- 🚀 Creates a `start-llama-swap.bat` launcher
+- 📦 Download the latest **llama.cpp** and **llama-swap** Windows binaries from GitHub Releases
+- 🔧 Choose a llama.cpp build from a drop-down menu (AVX2, AVX, Vulkan, CUDA, ...) — if an NVIDIA GPU is detected, the best matching CUDA build is pre-selected automatically
+- 🔍 Scan a folder of your choice for `.gguf` model files
+- 📝 Configure `config.yaml` for llama-swap with default model parameters inside the Settings tab
+- 🔗 Generate an `opencode.json` so [opencode](https://opencode.ai) connects to llama-swap automatically
+- 🚀 Create a `start-llama-swap.bat` launcher
 
-**Subsequent runs** — detects an existing install and silently updates the binaries only. No prompts, safe to schedule as a background task.
+**Background / Scheduled runs** — automatically bypasses the GUI when executed with `-NonInteractive`, silently updating the binaries only. Safe to schedule as a background task.
 
-**`--reconfigure` flag** — forces the full wizard to run again without reinstalling from scratch.
+**CLI fallback** — use `--reconfigure` or `--scan` flags from the terminal to bypass the GUI and run the legacy text-based wizard.
 
 ---
 
@@ -48,7 +48,7 @@ You will be prompted for an install directory (default: `%USERPROFILE%\llama-ins
 
 1. Download `install.ps1` and `install.bat` from this repo.
 2. Place both files in the same folder.
-3. Double-click `install.bat` — or run in PowerShell:
+3. Double-click `install.bat` to launch the GUI dashboard — or run in PowerShell:
    ```powershell
    .\install.ps1
    ```
@@ -57,13 +57,13 @@ You will be prompted for an install directory (default: `%USERPROFILE%\llama-ins
 
 ## 🔄 Updating
 
-Re-run `install.bat` (or `install.ps1`) at any time. If the installation is already configured, the script runs in **update-only mode** — it checks for new releases of llama.cpp and llama-swap and downloads them if available, then exits silently.
+Launch the GUI and click **Check for Updates**, or let the scheduled task handle it. In non-interactive mode, the script checks for new releases of llama.cpp and llama-swap and downloads them if available, then exits silently.
 
 ---
 
 ## ⚙️ Reconfiguring
 
-To redo the full setup wizard (change model directory, rebuild `config.yaml`, etc.):
+To redo the full setup wizard via the classic CLI wizard (change model directory, rebuild `config.yaml`, etc.):
 
 ```bat
 install.bat --reconfigure
@@ -79,7 +79,7 @@ Or in PowerShell:
 
 ## 🔍 Rescanning Models
 
-When you add or remove `.gguf` files, regenerate `config.yaml` and `opencode.json` without touching the binaries:
+When you add or remove `.gguf` files, you can click **Scan Models** in the GUI, or regenerate `config.yaml` and `opencode.json` via the CLI:
 
 ```bat
 install.bat --scan
@@ -107,7 +107,7 @@ Unregister-ScheduledTask -TaskName 'llama-cpp-swap-updater' -Confirm:$false
 
 ## 💾 Saved Settings
 
-After the first run, all your choices (install directory, model folder, listen host/port, and all model parameters) are saved to `settings.json` in the install directory. Subsequent runs — including `--reconfigure` and `--scan` — pre-fill every prompt with your previous values so you only need to press Enter to keep them.
+All your choices (install directory, model folder, listen host/port, and all model parameters) are saved to `settings.json` in the install directory. Subsequent runs will instantly load these values back into the GUI.
 
 ---
 
@@ -137,13 +137,13 @@ After a full install, your chosen directory will look like this:
 
 ## 🤖 llama-swap config.yaml
 
-The wizard scans your model directory for `.gguf` files and builds a `config.yaml` entry for each one, including:
+The GUI Settings tab lets you easily configure default settings for all your discovered `.gguf` models, including:
 
 - Context window size
 - GPU offloading (`--gpu-layers 999`)
 - Sampling parameters (temperature, top_p, top_k, min_p, repeat penalty, presence penalty)
 
-You can apply the same parameters to all models at once, or configure each one individually.
+You can apply these parameters universally across all models with the click of a button.
 
 ---
 
