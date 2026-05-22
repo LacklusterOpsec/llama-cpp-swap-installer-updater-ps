@@ -51,6 +51,7 @@ $REPO_LLAMA_CPP     = 'ggml-org/llama.cpp'
 # -------------------------------------------------------------------------------
 
 function Write-Banner {
+    if ($global:UseGuiOutput) { return }
     $sep = '-' * 60
     Write-Host ''
     Write-Host $sep -ForegroundColor DarkCyan
@@ -60,18 +61,25 @@ function Write-Banner {
 }
 
 function Write-Section ([string]$Title) {
+    if ($global:UseGuiOutput) { Log-Msg "" "Black"; Log-Msg "  -- $Title" "Goldenrod"; Log-Msg "" "Black"; return }
     $pad = '-' * [Math]::Max(0, 55 - $Title.Length)
     Write-Host ''
     Write-Host "  -- $Title $pad" -ForegroundColor Yellow
     Write-Host ''
 }
 
-function Write-Ok   ([string]$Msg) { Write-Host "  [OK] $Msg" -ForegroundColor Green  }
-function Write-Info ([string]$Msg) { Write-Host "  [..] $Msg" -ForegroundColor Gray   }
-function Write-Warn ([string]$Msg) { Write-Host "  [!!] $Msg" -ForegroundColor Yellow }
-function Write-Do   ([string]$Msg) { Write-Host "  [>>] $Msg" -ForegroundColor Cyan   }
+function Write-Ok   ([string]$Msg) { if ($global:UseGuiOutput) { Log-Msg "  [OK] $Msg" "DarkGreen" } else { Write-Host "  [OK] $Msg" -ForegroundColor Green } }
+function Write-Info ([string]$Msg) { if ($global:UseGuiOutput) { Log-Msg "  [..] $Msg" "Gray" } else { Write-Host "  [..] $Msg" -ForegroundColor Gray } }
+function Write-Warn ([string]$Msg) { if ($global:UseGuiOutput) { Log-Msg "  [!!] $Msg" "DarkGoldenrod" } else { Write-Host "  [!!] $Msg" -ForegroundColor Yellow } }
+function Write-Do   ([string]$Msg) { if ($global:UseGuiOutput) { Log-Msg "  [>>] $Msg" "DarkCyan" } else { Write-Host "  [>>] $Msg" -ForegroundColor Cyan } }
 
 function Read-Confirm ([string]$Prompt, [bool]$Default = $true) {
+    if ($global:UseGuiOutput) {
+        $btn = [System.Windows.MessageBoxButton]::YesNo
+        $icon = [System.Windows.MessageBoxImage]::Question
+        $res = [System.Windows.MessageBox]::Show($Prompt, "Confirm", $btn, $icon)
+        return $res -eq [System.Windows.MessageBoxResult]::Yes
+    }
     $hint = if ($Default) { 'Y/n' } else { 'y/N' }
     $r    = (Read-Host "  $Prompt ($hint)").Trim()
     if ([string]::IsNullOrEmpty($r)) { return $Default }
@@ -79,6 +87,7 @@ function Read-Confirm ([string]$Prompt, [bool]$Default = $true) {
 }
 
 function Read-OptionalParam ([string]$Label, [string]$Saved) {
+    if ($global:UseGuiOutput) { return $Saved }
     $hint = if ($Saved) { "[$Saved] (- to clear)" } else { '(Enter to omit)' }
     $val  = (Read-Host "  $Label $hint").Trim()
     if ([string]::IsNullOrEmpty($val)) { return $Saved }
@@ -218,6 +227,7 @@ function Invoke-Download ([string]$Url, [string]$OutFile) {
 
     $barWidth = 40
     $lastPct  = -1
+    if ($global:UseGuiOutput) { $global:pbMain.Visibility = 'Visible'; $global:pbMain.Value = 0 }
 
     try {
         while (-not $task.IsCompleted) {
@@ -226,11 +236,16 @@ function Invoke-Download ([string]$Url, [string]$OutFile) {
                     $downloaded = (Get-Item $OutFile -ErrorAction Stop).Length
                     $pct        = [math]::Min(99, [int]($downloaded / $total * 100))
                     if ($pct -ne $lastPct) {
+                        if ($global:UseGuiOutput) {
+                            $global:pbMain.Value = $pct
+                            DoEvents
+                        } else {
                         $filled = [int]($pct / 100 * $barWidth)
                         $bar    = ('=' * $filled) + ('-' * ($barWidth - $filled))
                         $dlMb   = '{0:N1}' -f ($downloaded / 1MB)
                         $totMb  = '{0:N1}' -f ($total / 1MB)
                         Write-Host "`r  [$bar] $pct% ($dlMb / $totMb MB)  " -NoNewline
+                        }
                         $lastPct = $pct
                     }
                 } catch { }
@@ -238,6 +253,7 @@ function Invoke-Download ([string]$Url, [string]$OutFile) {
                 Write-Host "`r  Downloading...  " -NoNewline
             }
             Start-Sleep -Milliseconds 200
+            if ($global:UseGuiOutput) { DoEvents }
         }
     } finally {
         $wc.Dispose()
@@ -245,8 +261,9 @@ function Invoke-Download ([string]$Url, [string]$OutFile) {
 
     if ($task.IsFaulted) { throw $task.Exception.InnerException }
 
-    Write-Host "`r  [$('=' * $barWidth)] 100%                              "
-    Write-Ok "$fileName downloaded."
+    if (-not $global:UseGuiOutput) { Write-Host \"`r  [$('=' * $barWidth)] 100%                              \" }
+    if ($global:UseGuiOutput) { $global:pbMain.Value = 100; Start-Sleep -Milliseconds 500; $global:pbMain.Visibility = 'Collapsed' }
+    Write-Ok \"$fileName downloaded.\"
 }
 
 # -------------------------------------------------------------------------------
@@ -471,6 +488,11 @@ function Get-NvidiaCudaVersion {
 }
 
 function Select-Build ($Builds, [string]$CurrentBuild) {
+    if ($global:UseGuiOutput) {
+        $idx = $global:cmbBuilds.SelectedIndex
+        if ($idx -lt 0) { throw \"Please select a llama.cpp build.\" }
+        return @{ Asset = $global:availableBuilds[$idx]; Type = $global:cmbBuilds.SelectedItem.ToString().Split(' ')[0] }
+    }
     $labels = $Builds | ForEach-Object {
         if ($_.name -match '^llama-[^-]+-bin-win-(.+)-x64\.zip$') { $Matches[1] } else { $_.name }
     }
@@ -684,6 +706,7 @@ function Install-Or-Update-LlamaCpp ([switch]$ForceMenu) {
 # -------------------------------------------------------------------------------
 
 function Select-ModelDirectory ([bool]$ForceNew = $false) {
+    if ($global:UseGuiOutput) { return $global:txtModelDir.Text }
     Write-Section 'Model Directory'
 
     $saved      = Read-Settings
@@ -734,6 +757,15 @@ function Select-ModelDirectory ([bool]$ForceNew = $false) {
 # -------------------------------------------------------------------------------
 
 function Read-ModelParams ([hashtable]$Defaults = $null) {
+    if ($global:UseGuiOutput) {
+        return @{
+            CtxVal = [int]$global:txtCtx.Text; OutVal = [int]$global:txtOut.Text
+            FullGpu = [bool]$global:chkGpu.IsChecked; Parallel = [int]$global:txtParallel.Text
+            KvQuant = [bool]$global:chkKvQuant.IsChecked
+            TempStr = $global:txtTemp.Text; TopPStr = $global:txtTopP.Text; TopKStr = $global:txtTopK.Text
+            MinPStr = $global:txtMinP.Text; RepPenStr = $global:txtRepPen.Text; PresPenStr = $global:txtPresPen.Text
+        }
+    }
     $d = if ($Defaults) { $Defaults } else { (Read-Settings).Params }
 
     $ctxStr = (Read-Host "  Context window size [$($d.CtxVal)]").Trim()
@@ -840,11 +872,15 @@ function New-LlamaSwapConfig ([string]$ModelDir, [bool]$Force = $false) {
     Write-Host ''
 
     $saved = Read-Settings
-    $addr  = (Read-Host "  Server host [$($saved.ListenHost)]").Trim()
-    if ([string]::IsNullOrEmpty($addr)) { $addr = $saved.ListenHost }
-
-    $port = (Read-Host "  Server port [$($saved.ListenPort)]").Trim()
-    if ([string]::IsNullOrEmpty($port)) { $port = $saved.ListenPort }
+    if ($global:UseGuiOutput) {
+        $addr = $global:txtHost.Text
+        $port = $global:txtPort.Text
+    } else {
+        $addr  = (Read-Host "  Server host [$($saved.ListenHost)]").Trim()
+        if ([string]::IsNullOrEmpty($addr)) { $addr = $saved.ListenHost }
+        $port = (Read-Host "  Server port [$($saved.ListenPort)]").Trim()
+        if ([string]::IsNullOrEmpty($port)) { $port = $saved.ListenPort }
+    }
 
     $listenAddr    = "${addr}:${port}"
     $serverBaseUrl = "http://${addr}:${port}"
@@ -1103,7 +1139,10 @@ function Invoke-Scan {
         if (Read-Confirm 'Scan this directory?') {
             $modelDir = $inferredDir
         } else {
-            $modelDir = (Read-Host '  Enter model directory path (or Enter to cancel)').Trim()
+            if ($global:UseGuiOutput) { $modelDir = $global:txtModelDir.Text }
+            else {
+                $modelDir = (Read-Host '  Enter model directory path (or Enter to cancel)').Trim()
+            }
             if ([string]::IsNullOrEmpty($modelDir) -or -not (Test-Path $modelDir)) {
                 Write-Info 'Scan cancelled.'
                 return
@@ -1229,7 +1268,355 @@ function Invoke-Scan {
 }
 
 # -------------------------------------------------------------------------------
-# Main
+# 
+
+function DoEvents {
+    $frame = New-Object System.Windows.Threading.DispatcherFrame
+    $callback = [System.Windows.Threading.DispatcherOperationCallback] {
+        param($f)
+        $f.Continue = $false
+        return $null
+    }
+    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+        [System.Windows.Threading.DispatcherPriority]::Background,
+        $callback,
+        $frame
+    ) | Out-Null
+    [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+}
+
+function Log-Msg($text, $color) {
+    $para = New-Object System.Windows.Documents.Paragraph
+    $para.Margin = New-Object System.Windows.Thickness(0)
+    $run = New-Object System.Windows.Documents.Run($text)
+    $run.Foreground = (New-Object System.Windows.Media.BrushConverter).ConvertFromString($color)
+    $para.Inlines.Add($run)
+    $global:rtbLog.Document.Blocks.Add($para)
+    $global:rtbLog.ScrollToEnd()
+    DoEvents
+}
+
+function Show-Gui {
+    Add-Type -AssemblyName PresentationFramework
+    Add-Type -AssemblyName System.Windows.Forms
+
+    $xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="llama-swap + llama.cpp Installer" Height="700" Width="900"
+        WindowStartupLocation="CenterScreen" Background="#f3f4f6">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        
+        <TabControl Grid.Row="0" Name="MainTabControl">
+            <TabItem Header="Dashboard">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    
+                    <GroupBox Header="Installation Status" Grid.Row="0" Margin="0,0,0,10" Padding="10">
+                        <StackPanel>
+                            <TextBlock Name="txtLlamaSwapStatus" Text="llama-swap: Checking..." Margin="0,0,0,5" />
+                            <TextBlock Name="txtLlamaCppStatus" Text="llama.cpp: Checking..." Margin="0,0,0,5" />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Name="btnCheckUpdates" Content="Check for Updates" Width="130" Height="30" Margin="0,0,10,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+                    
+                    <GroupBox Header="Installation Options" Grid.Row="1" Margin="0,0,0,10" Padding="10">
+                        <StackPanel>
+                            <TextBlock Text="llama.cpp Build:" Margin="0,0,0,5"/>
+                            <ComboBox Name="cmbBuilds" Width="400" HorizontalAlignment="Left" Margin="0,0,0,10" />
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Name="btnInstall" Content="Install / Update" Width="130" Height="30" Margin="0,0,10,0" />
+                                <Button Name="btnScan" Content="Scan Models" Width="130" Height="30" Margin="0,0,10,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+                    
+                    <GroupBox Header="Output Log" Grid.Row="2" Margin="0,0,0,0">
+                        <RichTextBox Name="rtbLog" IsReadOnly="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Background="#1e1e1e" />
+                    </GroupBox>
+                </Grid>
+            </TabItem>
+            
+            <TabItem Header="Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <GroupBox Header="Server Configuration" Margin="0,0,0,10" Padding="10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="300"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <TextBlock Text="Listen Host:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtHost" Grid.Row="0" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Listen Port:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtPort" Grid.Row="1" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Model Directory:" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtModelDir" Grid.Row="2" Grid.Column="1" Margin="0,5"/>
+                            </Grid>
+                        </GroupBox>
+                        
+                        <GroupBox Header="Default Model Parameters" Margin="0,0,0,10" Padding="10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="200"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <TextBlock Text="Context Window Size:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtCtx" Grid.Row="0" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Max Output Tokens:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtOut" Grid.Row="1" Grid.Column="1" Margin="0,5"/>
+                                
+                                <CheckBox Name="chkGpu" Content="Full GPU Offload" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,5"/>
+                                <CheckBox Name="chkKvQuant" Content="KV Cache Quantization (q8_0)" Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,5"/>
+                                
+                                <TextBlock Text="Parallel Requests:" Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtParallel" Grid.Row="4" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Temperature:" Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtTemp" Grid.Row="5" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Top P:" Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtTopP" Grid.Row="6" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Min P:" Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtMinP" Grid.Row="7" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Top K:" Grid.Row="8" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtTopK" Grid.Row="8" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Repeat Penalty:" Grid.Row="9" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtRepPen" Grid.Row="9" Grid.Column="1" Margin="0,5"/>
+                                
+                                <TextBlock Text="Presence Penalty:" Grid.Row="10" Grid.Column="0" VerticalAlignment="Center" Margin="0,5"/>
+                                <TextBox Name="txtPresPen" Grid.Row="10" Grid.Column="1" Margin="0,5"/>
+                            </Grid>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            
+            <TabItem Header="Scheduled Task">
+                <StackPanel Margin="10">
+                    <TextBlock Text="You can create a Windows Scheduled Task to run the updater silently every day at 03:00 and at login." TextWrapping="Wrap" Margin="0,0,0,10"/>
+                    <Button Name="btnCreateTask" Content="Create Scheduled Task" Width="200" Height="30" HorizontalAlignment="Left" />
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+        
+        <ProgressBar Name="pbMain" Grid.Row="1" Height="20" Margin="0,10,0,0" Visibility="Collapsed" />
+    </Grid>
+</Window>
+"@
+
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xaml))
+    $window = [System.Windows.Markup.XamlReader]::Load($reader)
+
+    $global:rtbLog = $window.FindName("rtbLog")
+    $global:pbMain = $window.FindName("pbMain")
+    
+    $global:txtLlamaSwapStatus = $window.FindName("txtLlamaSwapStatus")
+    $global:txtLlamaCppStatus = $window.FindName("txtLlamaCppStatus")
+    $global:cmbBuilds = $window.FindName("cmbBuilds")
+    
+    $global:txtHost = $window.FindName("txtHost")
+    $global:txtPort = $window.FindName("txtPort")
+    $global:txtModelDir = $window.FindName("txtModelDir")
+    $global:txtCtx = $window.FindName("txtCtx")
+    $global:txtOut = $window.FindName("txtOut")
+    $global:chkGpu = $window.FindName("chkGpu")
+    $global:chkKvQuant = $window.FindName("chkKvQuant")
+    $global:txtParallel = $window.FindName("txtParallel")
+    $global:txtTemp = $window.FindName("txtTemp")
+    $global:txtTopP = $window.FindName("txtTopP")
+    $global:txtTopK = $window.FindName("txtTopK")
+    $global:txtMinP = $window.FindName("txtMinP")
+    $global:txtRepPen = $window.FindName("txtRepPen")
+    $global:txtPresPen = $window.FindName("txtPresPen")
+
+    # Load Settings
+    $s = Read-Settings
+    $global:txtHost.Text = $s.ListenHost
+    $global:txtPort.Text = $s.ListenPort
+    $global:txtModelDir.Text = if ($s.ModelDir) { $s.ModelDir } else { Join-Path $ScriptRoot 'models' }
+    
+    $p = $s.Params
+    $global:txtCtx.Text = $p.CtxVal
+    $global:txtOut.Text = $p.OutVal
+    $global:chkGpu.IsChecked = $p.FullGpu
+    $global:txtParallel.Text = $p.Parallel
+    $global:chkKvQuant.IsChecked = $p.KvQuant
+    $global:txtTemp.Text = $p.TempStr
+    $global:txtTopP.Text = $p.TopPStr
+    $global:txtTopK.Text = $p.TopKStr
+    $global:txtMinP.Text = $p.MinPStr
+    $global:txtRepPen.Text = $p.RepPenStr
+    $global:txtPresPen.Text = $p.PresPenStr
+
+    # Disable buttons until checked
+    $btnInstall = $window.FindName("btnInstall")
+    $btnInstall.IsEnabled = $false
+    $btnCheckUpdates = $window.FindName("btnCheckUpdates")
+
+    $btnCheckUpdates.Add_Click({
+        $btnCheckUpdates.IsEnabled = $false
+        Log-Msg "Checking for updates..." "LightGray"
+        try {
+            $relSwap = Get-LatestRelease 'mostlygeek/llama-swap'
+            $global:latestSwap = $relSwap.tag_name
+            $global:relSwapFull = $relSwap
+            $global:txtLlamaSwapStatus.Text = "llama-swap: Latest is $($global:latestSwap) (Local: $(Get-LocalVersion $LlamaSwapDir))"
+
+            $relCpp = Get-LatestLlamaCppRelease
+            $global:latestCpp = $relCpp.tag_name
+            $global:relCppFull = $relCpp
+            $builds = Get-WindowsBuilds $relCpp.assets
+            $global:availableBuilds = $builds
+
+            $global:cmbBuilds.Items.Clear()
+            $bestIdx = -1
+            $nvCuda = Get-NvidiaCudaVersion
+            $nvVer = if ($nvCuda) { [version]$nvCuda } else { $null }
+            $bestVer = $null
+
+            $currentBuild = ''
+            $btFile = Join-Path $LlamaCppDir '.buildtype'
+            if (Test-Path $btFile) { $currentBuild = (Get-Content $btFile -Raw).Trim() }
+
+            $idx = 0
+            foreach ($b in $builds) {
+                $type = if ($b.name -match '^llama-[^-]+-bin-win-(.+)-x64\.zip$') { $Matches[1] } else { $b.name }
+                $global:cmbBuilds.Items.Add("$type ($($b.name))")
+                if ($type -eq $currentBuild) { $bestIdx = $idx }
+                elseif ($nvCuda -and $bestIdx -eq -1) {
+                    if ($type -match '^cuda-(\d+\.\d+)$') {
+                        $v = [version]$Matches[1]
+                        if ($v -le $nvVer -and ($null -eq $bestVer -or $v -gt $bestVer)) {
+                            $bestVer = $v; $bestIdx = $idx
+                        }
+                    }
+                }
+                $idx++
+            }
+            
+            $global:txtLlamaCppStatus.Text = "llama.cpp: Latest is $($global:latestCpp) (Local: $(Get-LocalVersion $LlamaCppDir) [$currentBuild])"
+
+            if ($bestIdx -ge 0) { $global:cmbBuilds.SelectedIndex = $bestIdx }
+            elseif ($global:cmbBuilds.Items.Count -gt 0) { $global:cmbBuilds.SelectedIndex = 0 }
+
+            $btnInstall.IsEnabled = $true
+            Log-Msg "Update check complete." "LimeGreen"
+        } catch {
+            Log-Msg "Failed to check for updates: $_" "Red"
+        }
+        $btnCheckUpdates.IsEnabled = $true
+    })
+
+    $btnInstall.Add_Click({
+        $btnInstall.IsEnabled = $false
+        try {
+            $Updates = @{ ListenHost = $global:txtHost.Text; ListenPort = $global:txtPort.Text; ModelDir = $global:txtModelDir.Text }
+            Save-Settings $Updates
+            
+            Install-Or-Update-LlamaSwap
+            $null = Install-Or-Update-LlamaCpp
+            
+            $swapCfg = New-LlamaSwapConfig -ModelDir $global:txtModelDir.Text -Force $false
+            if ($swapCfg -and $swapCfg.Models.Count -gt 0) {
+                New-OpencodeConfig -BaseUrl $swapCfg.ServerBaseUrl -Models $swapCfg.Models
+            }
+            
+            if ($swapCfg) {
+                $batFile = Join-Path $ScriptRoot 'start-llama-swap.bat'
+                if (-not (Test-Path $batFile)) {
+                    $swapExe = Join-Path $LlamaSwapDir 'llama-swap.exe'
+                    $swapCfgFile = Join-Path $LlamaSwapDir 'config.yaml'
+                    $batContent = "@echo off`r`n`"$swapExe`" --config `"$swapCfgFile`" --listen $($swapCfg.ListenAddr)`r`npause`r`n"
+                    Set-Content -Path $batFile -Value $batContent -Encoding ASCII -NoNewline
+                    Write-Ok "start-llama-swap.bat written to $batFile"
+                }
+            }
+            Write-Ok "Installation complete!"
+        } catch {
+            Log-Msg "Error during installation: $_" "Red"
+        }
+        $btnInstall.IsEnabled = $true
+    })
+
+    $btnScan = $window.FindName("btnScan")
+    $btnScan.Add_Click({
+        $btnScan.IsEnabled = $false
+        try {
+            Invoke-Scan
+        } catch {
+            Log-Msg "Error during scan: $_" "Red"
+        }
+        $btnScan.IsEnabled = $true
+    })
+
+    $btnCreateTask = $window.FindName("btnCreateTask")
+    $btnCreateTask.Add_Click({
+        $btnCreateTask.IsEnabled = $false
+        try {
+            Register-UpdateTask
+        } catch {
+            Log-Msg "Error creating task: $_" "Red"
+        }
+        $btnCreateTask.IsEnabled = $true
+    })
+
+    # Trigger update check on startup via dispatcher to keep UI responsive initially
+    $action = [action]{ $btnCheckUpdates.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) }
+    $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, $action) | Out-Null
+
+    $window.ShowDialog() | Out-Null
+}
+
+
+$isNonInteractive = [Environment]::CommandLine -match '-NonInteractive'
+$launchGui = -not $isNonInteractive -and -not $Scan -and -not $Reconfigure
+
+if ($launchGui) {
+    $global:UseGuiOutput = $true
+    Show-Gui
+} else {
+    $global:UseGuiOutput = $false
+    Main
+}
 # -------------------------------------------------------------------------------
 
 function Register-UpdateTask {
@@ -1473,4 +1860,15 @@ $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
 $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
 }
 
-Main
+
+$isNonInteractive = [Environment]::CommandLine -match '-NonInteractive'
+$launchGui = -not $isNonInteractive -and -not $Scan -and -not $Reconfigure
+
+if ($launchGui) {
+    $global:UseGuiOutput = $true
+    Show-Gui
+} else {
+    $global:UseGuiOutput = $false
+    Main
+}
+
