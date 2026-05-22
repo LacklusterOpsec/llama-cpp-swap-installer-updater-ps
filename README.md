@@ -1,5 +1,7 @@
 # ⚡ llama.cpp + llama-swap Installer / Updater
 
+![llama-swap + llama.cpp Installer Dashboard](assets/gui-screenshot.png)
+
 A native PowerShell WPF GUI application that downloads, installs, and configures [llama.cpp](https://github.com/ggml-org/llama.cpp) and [llama-swap](https://github.com/mostlygeek/llama-swap) on Windows — and keeps them up to date through an easy-to-use graphical dashboard.
 
 ---
